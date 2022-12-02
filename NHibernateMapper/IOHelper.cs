@@ -1,4 +1,5 @@
 ﻿using NHibernateMapper.Entities;
+using NHibernateMapper.Utility;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -9,6 +10,8 @@ namespace NHibernateMapper
     static class IOHelper
     {
         private static readonly string titleLine = new('-', 50);
+        
+        private static readonly string usingNhibernateMappingAttribute = "using NHibernate.Mapping.Attributes;";
         private static readonly string nhibernateMappingAttribute = "[HibernateMapping(Assembly = \"DAL\", Namespace = \"DAL.Models\")]";
         private static readonly string classAttribute = "[Class(1, Schema = \"{0}\", Table = \"{1}\", Lazy = false)]";
 
@@ -19,11 +22,15 @@ namespace NHibernateMapper
             var tableNameParts = fullTableName.Split('.');
             var schemaName = tableNameParts[0].Trim('[', ']');
             var tableName = tableNameParts[1].Trim('[', ']');
+            var className = FormatClassName(tableName);
 
+            file.WriteLine(usingNhibernateMappingAttribute);
+            file.WriteLine();
             file.WriteLine(nhibernateMappingAttribute);
             file.WriteLine(classAttribute, schemaName, tableName);
-            file.WriteLine($"public class {tableName}");
+            file.WriteLine($"public class {className}");
             file.WriteLine("{");
+
             foreach (var line in lines.Where(l => l.IsValid()))
             {
                 file.WriteLine(line.Attribute);
@@ -31,6 +38,11 @@ namespace NHibernateMapper
                 file.WriteLine();
             }
             file.WriteLine("}");
+        }
+
+        private static string FormatClassName(string tableName)
+        {
+            return tableName.ToTitleCase();
         }
 
         public static void WriteToConsole(List<Line> lines, string tableName)
@@ -43,7 +55,7 @@ namespace NHibernateMapper
                 Console.WriteLine(line.Attribute);
                 Console.WriteLine(line.Property);
                 Console.WriteLine();
-           }
+            }
         }
     }
 }

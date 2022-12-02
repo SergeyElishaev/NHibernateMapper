@@ -1,4 +1,6 @@
-﻿using NHibernateMapper.Utility;
+﻿using NHibernateAttributesMapper.Entities;
+using NHibernateAttributesMapper.Utility;
+using NHibernateMapper.Utility;
 using System;
 using System.Collections.Generic;
 
@@ -44,16 +46,51 @@ namespace NHibernateMapper.Entities
         public Line(string clearLine)
         {
             LineText = clearLine;
-            var items = clearLine.Split(spaceSeparator);
+            var lineWords = clearLine.Split(spaceSeparator);
 
-            SetColumnName(items[0]);
-            SetPropertyName(items[0]);
-            SetSqlType(items[1]);
-            SetSqlSize(items[1]);
-            IsNull = items[2].ToLower().StartsWith("null");
+            SetColumnName(lineWords[0]);
+            SetPropertyName(lineWords[0]);
+
+            SetSqlType(lineWords[1]);
+            SetSqlSize(lineWords[1]);
+
+            SetIsNull(lineWords);
+            SetIdentity(lineWords);
             SetCsType();
             SetAttribute();
             SetProperty();
+
+            //TODO: Check if line has DEFAULT and add a comment. (Consider adding a property Comment to the Line class)
+        }
+
+        private void SetIdentity(string[] lineWords)
+        {
+            foreach (var word in lineWords)
+            {
+                if (word.StartsWith(Constants.Identity, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    var braces = word.Substring(8); //Take the braces that start right after the word "identity" - index 8
+                    var numbers = braces.Unwrap('(', ')').Split(',');
+                    Identity = new Identity
+                    {
+                        IsIdentity = true,
+                        Seed = int.Parse(numbers[0]),
+                        Increment = int.Parse(numbers[1])
+                    };
+                }
+            }
+        }
+
+        private void SetIsNull(string[] lineWords)
+        {
+            for (int i = 1; i < lineWords.Length; i++)
+            {
+                //Use StartWith because it may be the last word and contain the comma at the end.
+                if (lineWords[i].StartsWith(Constants.Null, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    IsNull = !lineWords[i - 1].Equals(Constants.Not, StringComparison.InvariantCultureIgnoreCase);
+                }
+            }
         }
 
         private void SetSqlSize(string v)
@@ -65,6 +102,12 @@ namespace NHibernateMapper.Entities
             }
 
             SqlSize = size;
+        }
+
+        public void SetAsPrimaryKey()
+        {
+            IsPrimaryKey = true;
+            SetAttribute();
         }
 
         private void SetSqlType(string v)
@@ -79,7 +122,7 @@ namespace NHibernateMapper.Entities
 
         private void SetPropertyName(string propertyName)
         {
-            PropertyName = propertyName.ToTitleCase();
+            PropertyName = propertyName.Unwrap().ToTitleCase();
         }
 
         internal bool IsValid()
@@ -89,15 +132,14 @@ namespace NHibernateMapper.Entities
 
         private void SetCsType()
         {
-            CsType = sqlToCsTypes.GetValueOrDefault(SqlType.Unwrap());
+            CsharpType = sqlToCsTypes.GetValueOrDefault(SqlType.Unwrap());
 
-            if (IsNull && CsType != "string")
+            if (IsNull && CsharpType != "string")
             {
-                CsType += "?";
+                CsharpType += "?";
             }
         }
 
-        //TODO: Identify Identity on ID 
         private void SetAttribute()
         {
             if (sqlToCsTypes.TryGetValue(SqlType.Unwrap(), out string attributeType))
@@ -105,6 +147,10 @@ namespace NHibernateMapper.Entities
                 if (IsPrimaryKey)
                 {
                     Attribute = $"[Id(Name = \"{PropertyName}\", Column = \"{ColumnName}\", Type = \"{attributeType}\")]";
+                    if (Identity.IsIdentity)
+                    {
+                        Attribute += $"\n[Generator(1, Class = \"native\")]";
+                    }
                 }
                 else
                 {
@@ -119,18 +165,38 @@ namespace NHibernateMapper.Entities
 
         private void SetProperty()
         {
-            Property = $"public {CsType} {PropertyName.Unwrap()} {{ get; set; }}";
+            Property = $"public {CsharpType} {PropertyName} {{ get; set; }}";
         }
 
+        /// <summary>
+        /// Raw text of the current line
+        /// </summary>
         public string LineText { get; set; }
+        /// <summary>
+        /// The name as it appears in the SQL Script (Database table)
+        /// </summary>
         public string ColumnName { get; set; }
+        /// <summary>
+        /// The name of the property as it will appear in the code
+        /// </summary>
         public string PropertyName { get; set; }
         public string SqlType { get; set; }
         public int SqlSize { get; set; }
-        public bool IsNull { get; set; }
-        public string CsType { get; set; }
+        /// <summary>
+        /// By default, a column holds NULL values
+        /// </summary>
+        public bool IsNull { get; set; } = true;
+        public string CsharpType { get; set; }
+        /// <summary>
+        /// NHibernate Attribute to add on top of the property
+        /// </summary>
         public string Attribute { get; set; }
+        /// <summary>
+        /// The full property as it appears in the class
+        /// Including access modifier, type, name, getter and setter.
+        /// </summary>
         public string Property { get; set; }
         public bool IsPrimaryKey { get; set; }
+        public Identity Identity { get; set; }
     }
 }

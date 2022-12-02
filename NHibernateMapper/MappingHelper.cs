@@ -1,4 +1,6 @@
-﻿using NHibernateMapper.Entities;
+﻿using NHibernateAttributesMapper.Utility;
+using NHibernateMapper.Entities;
+using NHibernateMapper.Utility;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -15,38 +17,71 @@ namespace NHibernateMapper
         /// <returns>C# Mapping File</returns>
         public static void Map(string inputFilePath, string outputFilePath)
         {
-            var allLines = File.ReadAllLines(inputFilePath);
+            var rawLines = File.ReadAllLines(inputFilePath);
 
-            var createLineIndex = Array.FindIndex(allLines, l => l.Contains("CREATE TABLE", StringComparison.InvariantCultureIgnoreCase));
+            var createLineIndex = Array.FindIndex(rawLines, l => l.Contains(Constants.CreateTable, StringComparison.InvariantCultureIgnoreCase));
 
-            var tableName = GetTableName(allLines[createLineIndex]);
-            var lines = GenerateLines(allLines, createLineIndex, out int processedLineIndex);
+            var tableName = GetTableName(rawLines[createLineIndex]);
+            var lines = GenerateLines(rawLines, createLineIndex);
 
-            UpdateConstraints(ref lines, allLines, processedLineIndex);
+            UpdateConstraints(ref lines, rawLines, createLineIndex + lines.Count);
 
             IOHelper.WriteToFile(lines, tableName, outputFilePath);
             IOHelper.WriteToConsole(lines, tableName);
         }
 
-        private static void UpdateConstraints(ref List<Line> lines, string[] allLines, int processedLineIndex)
+        private static void UpdateConstraints(ref List<Line> lines, string[] rawLines, int processedLineIndex)
         {
-            while (processedLineIndex < allLines.Length)
+            while (processedLineIndex < rawLines.Length)
             {
-                if (allLines[processedLineIndex].Trim().StartsWith("CONSTRAINT", StringComparison.InvariantCultureIgnoreCase))
+                if (rawLines[processedLineIndex].Trim().StartsWith(Constants.Constraint, StringComparison.InvariantCultureIgnoreCase))
                 {
-                    if (allLines[processedLineIndex].Contains("PRIMARY KEY", StringComparison.InvariantCultureIgnoreCase))
+                    if (rawLines[processedLineIndex].Contains(Constants.PrimaryKey, StringComparison.InvariantCultureIgnoreCase))
                     {
-                        //TODO: assign PK attribute to line
+                        //Find the column name in the first braces after "PRIMARY KEY".
+                        while (!rawLines[processedLineIndex].Contains('(') && processedLineIndex < rawLines.Length)
+                        {
+                            processedLineIndex++;
+                        }
+                        if (processedLineIndex >= rawLines.Length)
+                        {
+                            break;
+                        }
+                        var columnName = "";
+                        var indexOfOpeningBracket = rawLines[processedLineIndex].IndexOf('(');
+                        var hasLettersAfterOpeningBracket = rawLines[processedLineIndex][indexOfOpeningBracket..].Any(c => char.IsLetter(c));
+
+                        if (hasLettersAfterOpeningBracket)
+                        {
+                            //Take column name from the current line
+                            columnName = rawLines[processedLineIndex][(indexOfOpeningBracket + 1)..].Unwrap();
+                        }
+                        processedLineIndex++;
+                        while (processedLineIndex < rawLines.Length && !rawLines[processedLineIndex].Any(c=>char.IsLetter(c)))
+                        {
+                            processedLineIndex++;
+                        }
+
+                        //If this line is reached - means there are letters in it. Take the first word as the column name for Primary Key
+                        //TODO: Improve functionality to support Primary Keys with multiple columns.
+                        columnName = rawLines[processedLineIndex].Trim().Split(' ')[0].Unwrap();
+                        var keyLine = lines.Where(l => l.ColumnName.Unwrap() == columnName).FirstOrDefault();
+                        if (keyLine != null)
+                        {
+                            keyLine.SetAsPrimaryKey();
+                        }
                     }
+                    //TODO: Handle other constraints (Add a comment with details)
                 }
+                processedLineIndex++;
             }
         }
 
-        private static List<Line> GenerateLines(string[] allLines, int createLineIndex, out int processedLineIndex)
+        private static List<Line> GenerateLines(string[] allLines, int createLineIndex)
         {
             var result = new List<Line>();
             
-            for (processedLineIndex = createLineIndex + 1; processedLineIndex < allLines.Length; processedLineIndex++)
+            for (var processedLineIndex = createLineIndex + 1; processedLineIndex < allLines.Length; processedLineIndex++)
             {
                 var currentLine = TrimLine(allLines[processedLineIndex]);
 
@@ -60,8 +95,6 @@ namespace NHibernateMapper
                 }
             }
 
-
-
             return result;
         }
 
@@ -69,7 +102,7 @@ namespace NHibernateMapper
         {
             var terminateKeywords = new List<string>
             {
-                "GO", "COMMIT", "CONSTRAINT", ")"
+                Constants.Go, Constants.Commit, Constants.Constraint, ")"
             };
 
             return line == null || terminateKeywords.Any(k => line.TrimStart().StartsWith(k, StringComparison.InvariantCultureIgnoreCase));

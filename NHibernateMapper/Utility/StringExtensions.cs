@@ -1,5 +1,5 @@
-﻿using System.Globalization;
-using System.Linq;
+﻿using System.Linq;
+using System.Text;
 
 namespace NHibernateMapper.Utility
 {
@@ -12,20 +12,23 @@ namespace NHibernateMapper.Utility
 
         public static string ToTitleCase(this string str)
         {
-            TextInfo textInfo = new CultureInfo("en-US", false).TextInfo;
+            var parts = str.Split('_');
 
-            //str = textInfo.ToTitleCase(str);
-
-            if (str.Contains("_"))
+            var result = new StringBuilder();
+            foreach (var part in parts)
             {
-                str = str.Replace("_", "");
-            }
-            if (str.Contains(" "))
-            {
-                str = str.Replace(" ", "");
+                if (part.Length > 0)
+                {
+                    string titleCasedWord = char.ToUpper(part[0]).ToString();
+                    for (int j = 1; j < part.Length; j++)
+                    {
+                        titleCasedWord += char.ToLower(part[j]);
+                    }
+                    result.Append(titleCasedWord);
+                }
             }
 
-            return str;
+            return result.ToString();
         }
 
         public static string Unwrap(this string str, char opening = '[', char closing = ']')
@@ -41,6 +44,11 @@ namespace NHibernateMapper.Utility
             }
 
             return str;
+        }
+
+        public static string Wrap(this string str, char opening = '[', char closing = ']')
+        {
+            return $"{opening}{str}{closing}";
         }
     }
 }
